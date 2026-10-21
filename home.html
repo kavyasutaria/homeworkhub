@@ -1,0 +1,219 @@
+{# Dashboard fragment included by portal.html. #}
+
+<section class="hero" aria-labelledby="welcome-heading">
+  <div class="eyebrow">
+    {{ 'Teaching workspace' if g.user.role == 'teacher' else 'Your learning workspace' }}
+  </div>
+
+  <h1 id="welcome-heading">
+    Hello, {{ g.user.name.split()[0] }}.<br>
+    {{ 'Inspire the next step.' if g.user.role == 'teacher' else 'Make today a step forward.' }}
+  </h1>
+
+  <p>
+    {% if g.user.role == 'teacher' %}
+      Publish clear tasks, review student work and turn thoughtful feedback into progress.
+    {% else %}
+      Stay on top of your deadlines, share your work and build on every piece of feedback.
+    {% endif %}
+  </p>
+
+  {% if g.user.role == 'teacher' %}
+    <a class="btn light" href="{{ url_for('new_assignment') }}">＋ Create assignment</a>
+  {% else %}
+    <a class="btn light" href="#assignment-board">Find your next task ↓</a>
+  {% endif %}
+</section>
+
+<section class="stats" aria-label="Workspace overview">
+  {% if g.user.role == 'teacher' %}
+    {% set labels = ['Published assignments', 'Attempts awaiting review', 'Completed attempts'] %}
+    {% set icons = ['▤', '◷', '✓'] %}
+  {% else %}
+    {% set labels = ['Not yet submitted', 'Revision requested', 'Completed assignments'] %}
+    {% set icons = ['▤', '↻', '✓'] %}
+  {% endif %}
+
+  {% for label in labels %}
+    <div class="card stat">
+      <div>
+        <div class="stat-label">{{ label }}</div>
+        <strong>{{ counts[loop.index0] }}</strong>
+      </div>
+      <span class="stat-icon" aria-hidden="true">{{ icons[loop.index0] }}</span>
+    </div>
+  {% endfor %}
+</section>
+
+<section id="assignment-board" aria-labelledby="board-heading">
+  <div class="section-heading row wrap">
+    <div>
+      <div class="eyebrow">Keep your next step in sight</div>
+      <h2 id="board-heading" style="margin-top:7px">
+        {{ 'Your assignments' if g.user.role == 'teacher' else 'Assignment board' }}
+      </h2>
+      <p class="muted small">
+        {% if g.user.role == 'teacher' %}
+          Find an assignment and open its submissions to review student work.
+        {% else %}
+          Explore your tasks, check deadlines and see where your work stands.
+        {% endif %}
+      </p>
+    </div>
+
+    <span class="badge">{{ total_assignments }} assignments</span>
+  </div>
+
+  <form class="card filters" action="{{ url_for('dashboard') }}" method="get" role="search">
+    <div>
+      <label for="search">Search assignments</label>
+      <input
+        id="search"
+        name="q"
+        type="search"
+        maxlength="100"
+        placeholder="Search title or subject…"
+        value="{{ filters.q }}"
+      >
+    </div>
+
+    <div>
+      <label for="subject-filter">Subject</label>
+      <select id="subject-filter" name="subject">
+        <option value="">All subjects</option>
+        {% for subject in subjects %}
+          <option value="{{ subject }}" {% if filters.subject == subject %}selected{% endif %}>
+            {{ subject }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label for="status-filter">Status</label>
+      <select id="status-filter" name="status">
+        <option value="">All statuses</option>
+
+        {% if g.user.role == 'teacher' %}
+          {% set statuses = ['Awaiting review', 'Open', 'Due soon', 'Closed'] %}
+        {% else %}
+          {% set statuses = ['Not submitted', 'Submitted', 'Revision requested', 'Completed'] %}
+        {% endif %}
+
+        {% for status in statuses %}
+          <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>
+            {{ status }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label for="sort-filter">Sort by</label>
+      <select id="sort-filter" name="sort">
+        <option value="deadline" {% if filters.sort == 'deadline' %}selected{% endif %}>
+          Deadline
+        </option>
+        <option value="newest" {% if filters.sort == 'newest' %}selected{% endif %}>
+          Newest first
+        </option>
+        {% if g.user.role == 'teacher' %}
+          <option value="review" {% if filters.sort == 'review' %}selected{% endif %}>
+            Most awaiting review
+          </option>
+        {% endif %}
+      </select>
+    </div>
+
+    <button class="btn" type="submit">Apply</button>
+  </form>
+
+  <div class="row wrap result-count">
+    <span>Showing {{ assignments|length }} of {{ total_assignments }} assignments</span>
+
+    {% if filters.q or filters.subject or filters.status %}
+      <a href="{{ url_for('dashboard') }}">Clear filters ×</a>
+    {% endif %}
+  </div>
+
+  {% if assignments %}
+    <div class="assignment-grid">
+      {% for a in assignments %}
+        <article class="card assignment-card">
+          <div class="row wrap">
+            <span class="tag">{{ a.subject }}</span>
+            {{ status_badge(a.status_label) }}
+          </div>
+
+          <h3>{{ a.title }}</h3>
+
+          <p class="description">
+            {{ a.instructions[:150] }}{{ '…' if a.instructions|length > 150 else '' }}
+          </p>
+
+          <div class="assignment-meta">
+            <div class="row wrap">
+              <span class="muted">Submission deadline</span>
+              {{ status_badge(a.deadline_label) }}
+            </div>
+
+            <strong style="display:block;margin-top:7px">
+              {{ a.due_at|date }} AEST
+            </strong>
+
+            {% if g.user.role == 'teacher' %}
+              <p class="small muted" style="margin:9px 0 0">
+                {{ a.pending }} {{ 'attempt' if a.pending == 1 else 'attempts' }} awaiting review
+              </p>
+            {% endif %}
+          </div>
+
+          <a
+            class="btn {{ 'secondary' if g.user.role == 'student' else '' }} full"
+            href="{{ url_for('assignment_detail', assignment_id=a.id) }}"
+          >
+            {% if g.user.role == 'teacher' %}
+              Manage assignment →
+            {% elif a.my_status == 'Revision requested' and a.deadline_label != 'Closed' %}
+              Read feedback & revise →
+            {% elif a.my_status == 'Completed' %}
+              View feedback & score →
+            {% elif a.my_status == 'Submitted' %}
+              View your submission →
+            {% elif a.deadline_label == 'Closed' %}
+              View assignment →
+            {% else %}
+              Open assignment →
+            {% endif %}
+          </a>
+        </article>
+      {% endfor %}
+    </div>
+
+  {% elif total_assignments %}
+    <div class="card empty">
+      <div class="empty-icon" aria-hidden="true">⌕</div>
+      <h3>No matching assignments.</h3>
+      <p>Try a different search term, subject or status.</p>
+      <a class="btn secondary" href="{{ url_for('dashboard') }}">Clear filters</a>
+    </div>
+
+  {% else %}
+    <div class="card empty">
+      <div class="empty-icon" aria-hidden="true">▤</div>
+      <h3>{{ 'Your teaching space starts here.' if g.user.role == 'teacher' else 'A fresh start awaits.' }}</h3>
+
+      <p>
+        {% if g.user.role == 'teacher' %}
+          Create your first assignment to give students a clear task and deadline.
+        {% else %}
+          Your teacher has not published any assignments yet. Check back when your next task is ready.
+        {% endif %}
+      </p>
+
+      {% if g.user.role == 'teacher' %}
+        <a class="btn" href="{{ url_for('new_assignment') }}">＋ Create assignment</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</section>
